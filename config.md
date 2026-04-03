@@ -9,32 +9,35 @@ Subsystem spec covering `pkg/globalconfig/` and `pkg/config/` (types, remoteconf
 | `pkg/globalconfig/global_config.go` | `GlobalConfig` struct, `ReadGlobalConfig()`, `WriteGlobalConfig()`, project list CRUD |
 | `pkg/globalconfig/remote_config.go` | `RemoteConfig` struct (URLs + intervals), default URL constants |
 | `pkg/globalconfig/messages.go` | `MessagesConfig` struct (`TickerInterval int`) |
-| `pkg/globalconfig/values.go` | `ValidOmitContainers` map, `ValidXdebugIDELocations`, validation helpers |
+| `pkg/globalconfig/values.go` | `ValidOmitContainers` map, `ValidXdebugIDELocations`, validation helpers, env-var globals |
 | `pkg/globalconfig/errors.go` | `InvalidOmitContainers` error type |
-| `pkg/globalconfig/types/types.go` | `RouterTypeTraefik` const, `IsValidRouterType()` |
-| `pkg/globalconfig/performance_mode.go` | `GlobalConfig.GetPerformanceMode()` method |
-| `pkg/globalconfig/xhprof_mode.go` | `GlobalConfig.GetXHProfMode()` method |
+| `pkg/globalconfig/types/types.go` | `RouterTypeTraefik` const, `IsValidRouterType()`, `GetValidRouterTypes()` |
+| `pkg/globalconfig/performance_mode.go` | `GlobalConfig.GetPerformanceMode()`, `SetPerformanceMode()`, `IsMutagenEnabled()` |
+| `pkg/globalconfig/xhprof_mode.go` | `GlobalConfig.GetXHProfMode()`, `SetXHProfMode()` |
 | `pkg/globalconfig/styles.go` | `IsValidTableStyle()`, `GetTableStyleByName()` |
-| `pkg/config/types/config_type.go` | `PerformanceMode` string type, `XHProfMode` string type, constants |
-| `pkg/config/types/performance_mode.go` | `PerformanceModeDefault` (OS-specific via build tags) |
+| `pkg/config/types/config_type.go` | `ConfigType`, `ConfigTypeGlobal`, `ConfigTypeProject`; `PerformanceMode`/`XHProfMode` types and constants |
+| `pkg/config/types/performance_mode.go` | `ValidPerformanceModeOptions()`, `IsValidPerformanceMode()`, `CheckValidPerformanceMode()`, flag constants |
+| `pkg/config/types/xhprof_mode.go` | `IsValidXHProfMode()`, `FlagXHProfModeDefault`, flag constants |
+| `pkg/config/types/performance_mode_linux.go` | `GetPerformanceModeDefault()` → `PerformanceModeNone` (build tag) |
+| `pkg/config/types/performance_mode_darwin_win.go` | `GetPerformanceModeDefault()` → `PerformanceModeMutagen` (build tag) |
 | `pkg/config/remoteconfig/remote_config.go` | `New()` constructor, `remoteConfig` struct, download + local cache logic |
-| `pkg/config/remoteconfig/config.go` | `Config` struct with URL/intervals, `getLocalSourceFileName()` |
-| `pkg/config/remoteconfig/global.go` | `GetRemoteConfig()` singleton, wires global config into `remoteconfig.New()` |
-| `pkg/config/remoteconfig/state.go` | `state` wrapper over `statetypes.State`, tracks `UpdatedAt` |
+| `pkg/config/remoteconfig/config.go` | `Config` struct with `Local`, URL, intervals; `getLocalSourceFileName()` |
+| `pkg/config/remoteconfig/global.go` | `InitGlobal()`/`GetGlobal()` singletons; `InitGlobalSponsorship()`/`GetGlobalSponsorship()` |
+| `pkg/config/remoteconfig/state.go` | `state` wrapper with `stateEntry` (UpdatedAt, LastNotificationAt, LastTickerAt, LastTickerMessage, LastSponsorshipAt) |
 | `pkg/config/remoteconfig/messages.go` | `ShowNotifications()`, `ShowTicker()` display logic |
-| `pkg/config/remoteconfig/sponsorship.go` | `ShowSponsorshipAppreciation()` display logic |
-| `pkg/config/remoteconfig/types/remote_config.go` | `RemoteConfig` interface, `RemoteConfigData`, `Message`, `Remote` structs |
+| `pkg/config/remoteconfig/sponsorship.go` | `NewSponsorshipManager()`, `sponsorshipManager` struct, `ShowSponsorshipAppreciation()` |
+| `pkg/config/remoteconfig/types/remote_config.go` | `RemoteConfig` interface, `RemoteConfigData`, `Message`, `Messages`, `Notifications`, `Ticker`, `Remote` structs |
 | `pkg/config/remoteconfig/types/remote_config_storage.go` | `RemoteConfigStorage` interface |
 | `pkg/config/remoteconfig/types/messages.go` | `Notification` struct with conditions |
-| `pkg/config/remoteconfig/types/sponsorship.go` | `SponsorshipAppreciation` struct |
-| `pkg/config/remoteconfig/types/addon.go` | `AddonData` struct for addon registry |
-| `pkg/config/remoteconfig/storage/file_storage.go` | `FileStorage` implementing `RemoteConfigStorage` via local JSON file |
-| `pkg/config/remoteconfig/storage/addon_storage.go` | `AddonStorage` for addon data caching |
-| `pkg/config/remoteconfig/storage/sponsorship_storage.go` | `SponsorshipStorage` for sponsorship data caching |
+| `pkg/config/remoteconfig/types/sponsorship.go` | `SponsorshipData`, `SponsorshipManager` interface, `GitHubSponsorship`, `InvoicedSponsorship`, `SponsorshipHistoryEntry` |
+| `pkg/config/remoteconfig/types/addon.go` | `AddonData`, `Addon`, `FlexibleString` structs for addon registry |
+| `pkg/config/remoteconfig/storage/file_storage.go` | `NewFileStorage()` implementing `RemoteConfigStorage` via gob-encoded local file |
+| `pkg/config/remoteconfig/storage/addon_storage.go` | `AddonStorage` interface + `NewAddonFileStorage()` gob-backed implementation |
+| `pkg/config/remoteconfig/storage/sponsorship_storage.go` | `SponsorshipStorage` interface + `NewSponsorshipFileStorage()` gob-backed implementation |
 | `pkg/config/remoteconfig/downloader/jsonc_downloader.go` | `URLJSONCDownloader`, HTTP GET + JSONC parse |
-| `pkg/config/state/state_manager.go` | `NewDdevState()` factory, `stateManager` struct |
-| `pkg/config/state/types/state.go` | `State` interface: `Get(key string) string`, `Set(key, value string) error` |
-| `pkg/config/state/types/state_storage.go` | `StateStorage` interface: `Read() (map[string]string, error)`, `Write(map[string]string) error` |
+| `pkg/config/state/state_manager.go` | `New(storage)` factory, `stateManager` struct |
+| `pkg/config/state/types/state.go` | `State` interface: `Load()`, `Save()`, `Loaded()`, `Changed()`, `Get(key, entry)`, `Set(key, entry)` |
+| `pkg/config/state/types/state_storage.go` | `StateStorage` interface: `Read() (RawState, error)`, `Write(RawState) error` |
 | `pkg/config/state/storage/yaml/yaml_storage.go` | `YamlStorage` implementing `StateStorage` via YAML file |
 
 ## Key Types
@@ -113,30 +116,61 @@ type MessagesConfig struct {
 }
 ```
 
-### config/types (`pkg/config/types/config_type.go`)
+### config/types (`pkg/config/types/config_type.go`, `performance_mode.go`, `xhprof_mode.go`)
 
 ```go
-type PerformanceMode string
+// ConfigType distinguishes global vs project config contexts for validation
+type ConfigType string
+const (
+    ConfigTypeGlobal  ConfigType = "global"
+    ConfigTypeProject ConfigType = "project"
+)
+
+type PerformanceMode = string
 const (
     PerformanceModeEmpty   PerformanceMode = ""
+    PerformanceModeGlobal  PerformanceMode = "global"  // project-only: inherit from global
     PerformanceModeNone    PerformanceMode = "none"
     PerformanceModeMutagen PerformanceMode = "mutagen"
 )
 
-type XHProfMode string
+// ValidPerformanceModeOptions returns valid choices for the given ConfigType
+func ValidPerformanceModeOptions(configType ConfigType) []PerformanceMode
+func IsValidPerformanceMode(performanceMode string, configType ConfigType) bool
+func CheckValidPerformanceMode(performanceMode string, configType ConfigType) error
+func GetPerformanceModeDefault() PerformanceMode  // OS-specific via build tags
+
+type XHProfMode = string
 const (
     XHProfModeEmpty   XHProfMode = ""
     XHProfModePrepend XHProfMode = "prepend"
     XHProfModeXHGui   XHProfMode = "xhgui"
 )
+func IsValidXHProfMode(xhprofMode string, configType ConfigType) bool
+// FlagXHProfModeDefault = "xhgui"
 ```
 
 ### State interface (`pkg/config/state/types/state.go`)
 
 ```go
+type StateEntryKey = string
+type StateEntry = any
+type RawState = map[string]any
+
 type State interface {
-    Get(key string) string
-    Set(key string, value string) error
+    Load() error
+    Save() error
+    Loaded() bool
+    Changed() bool
+    // Get deserializes key into stateEntry (must be a pointer)
+    Get(key StateEntryKey, stateEntry StateEntry) error
+    // Set serializes stateEntry under key; marks state changed
+    Set(key StateEntryKey, stateEntry StateEntry) error
+}
+
+type StateStorage interface {
+    Read() (RawState, error)
+    Write(RawState) error
 }
 ```
 
@@ -151,8 +185,44 @@ type RemoteConfig interface {
 
 type RemoteConfigData struct {
     UpdateInterval int      `json:"update-interval,omitempty"`
-    Remote         Remote   `json:"remote,omitempty"`
-    Messages       Messages `json:"messages,omitempty"`
+    Remote         Remote   `json:"remote"`
+    Messages       Messages `json:"messages"`
+}
+```
+
+### SponsorshipManager interface (`pkg/config/remoteconfig/types/sponsorship.go`)
+
+```go
+type SponsorshipManager interface {
+    GetSponsorshipData() (*SponsorshipData, error)
+    GetTotalMonthlyIncome() float64
+    GetTotalSponsors() int
+    IsDataStale() bool
+}
+```
+
+### AddonData / Addon / FlexibleString (`pkg/config/remoteconfig/types/addon.go`)
+
+```go
+// FlexibleString unmarshals from JSON string, number, or null
+type FlexibleString struct {
+    Value string
+    IsSet bool
+}
+
+type Addon struct {
+    Title         string         `json:"title"`
+    GitHubURL     string         `json:"github_url"`
+    // ... description, user, repo, default_branch, tag_name (FlexibleString), etc.
+    TagName       FlexibleString `json:"tag_name"`
+}
+
+type AddonData struct {
+    UpdatedDateTime     time.Time `json:"updated_datetime"`
+    TotalAddonsCount    int
+    OfficialAddonsCount int
+    ContribAddonsCount  int
+    Addons              []Addon
 }
 ```
 
@@ -193,11 +263,21 @@ func GetFreePort(localIPAddr string) (string, error)
 // remote_config.go
 func New(config *Config, stateManager statetypes.State, isInternetActive func() bool) types.RemoteConfig
 
-// global.go
-func GetRemoteConfig() types.RemoteConfig
+// global.go — singletons (init-once pattern)
+func InitGlobal(config Config, stateManager statetypes.State, isInternetActive func() bool) types.RemoteConfig
+func GetGlobal() types.RemoteConfig
+func InitGlobalSponsorship(localPath string, stateManager statetypes.State, isInternetActive func() bool, updateInterval int, url string) types.SponsorshipManager
+func GetGlobalSponsorship() types.SponsorshipManager
+
+// sponsorship.go
+func NewSponsorshipManager(localPath string, stateManager statetypes.State, isInternetActive func() bool, updateInterval int, url string) types.SponsorshipManager
 
 // config.go — Config struct
+type Local struct {
+    Path string
+}
 type Config struct {
+    Local          Local
     URL            string
     UpdateInterval int
     TickerInterval int
@@ -207,11 +287,22 @@ type Config struct {
 ### State Manager (`pkg/config/state/state_manager.go`)
 
 ```go
-func NewDdevState() types.State
-// Returns a stateManager backed by YamlStorage at GetGlobalDdevDir()/.state.yaml
+func New(storage types.StateStorage) types.State
+// Returns a stateManager with lazy load; Get() calls Load() on first access
 ```
 
-### Validation (`pkg/globalconfig/values.go`, `styles.go`)
+### GlobalConfig methods (`pkg/globalconfig/performance_mode.go`, `xhprof_mode.go`)
+
+```go
+func (c *GlobalConfig) GetPerformanceMode() types.PerformanceMode
+func (c *GlobalConfig) SetPerformanceMode(performanceMode string) *GlobalConfig
+func (c *GlobalConfig) IsMutagenEnabled() bool
+
+func (c *GlobalConfig) GetXHProfMode() types.XHProfMode
+func (c *GlobalConfig) SetXHProfMode(xhprofMode string) *GlobalConfig
+```
+
+### Validation (`pkg/globalconfig/values.go`, `styles.go`, `types/types.go`)
 
 ```go
 func IsValidOmitContainers(containerList []string) bool
@@ -219,6 +310,8 @@ func GetValidOmitContainers() []string
 func IsValidXdebugIDELocation(loc string) bool
 func IsValidTableStyle(style string) bool
 func GetTableStyleByName(name string) table.Style
+func IsValidRouterType(router RouterType) bool
+func GetValidRouterTypes() []RouterType
 ```
 
 ## Data Flow
@@ -256,18 +349,21 @@ EnsureGlobalConfig()                          // pkg/globalconfig/global_config.
 ### Remote Config Loading
 
 ```text
-GetRemoteConfig()                             // pkg/config/remoteconfig/global.go
-  └─ remoteconfig.New(config, stateManager, isInternetActive)
-       ├─ newState(stateManager)              // wraps state.State with UpdatedAt tracking
-       ├─ storage.NewFileStorage(localFile)   // ~/.ddev/.remote-config
-       ├─ loadFromLocalStorage()              // reads cached JSON from FileStorage
+InitGlobal(config, stateManager, isInternetActive)  // pkg/config/remoteconfig/global.go
+  └─ remoteconfig.New(&config, stateManager, isInternetActive)
+       ├─ newState(stateManager)              // wraps state.State with stateEntry tracking
+       ├─ storage.NewFileStorage(localFile)   // ~/.ddev/.remote-config (gob encoded)
+       ├─ loadFromLocalStorage()              // reads cached data from FileStorage
        ├─ downloader.NewURLJSONCDownloader(url)
        └─ updateFromRemote()
             ├─ check isInternetActive()
             ├─ check state.UpdatedAt + getUpdateInterval()
             ├─ urlDownloader.Download(ctx, &remoteConfig)  // HTTP GET + JSONC parse
             ├─ fileStorage.Write(remoteConfig)              // cache locally
-            └─ state.save()                                 // persist UpdatedAt
+            └─ state.save()                                 // persist stateEntry via stateManager.Set + Save()
+
+// GetGlobal() returns the already-initialized singleton (nil if InitGlobal not called)
+// Sponsorship is initialized separately via InitGlobalSponsorship()
 ```
 
 ## Configuration Precedence
@@ -282,8 +378,13 @@ The merge order during `ReadGlobalConfig()` is:
 
 For `PerformanceMode`, the OS-specific default is resolved via build tags:
 
-- `pkg/config/types/performance_mode_linux.go`: `PerformanceModeDefault = PerformanceModeNone`
-- `pkg/config/types/performance_mode_darwin_win.go`: `PerformanceModeDefault = PerformanceModeMutagen`
+- `pkg/config/types/performance_mode_linux.go`: `GetPerformanceModeDefault()` → `PerformanceModeNone`
+- `pkg/config/types/performance_mode_darwin_win.go`: `GetPerformanceModeDefault()` → `PerformanceModeMutagen`
+
+`PerformanceModeGlobal` (`"global"`) is a project-level sentinel meaning "inherit from global config".
+It is only valid for `ConfigTypeProject`, not `ConfigTypeGlobal`.
+
+`SetPerformanceMode()` and `SetXHProfMode()` are fluent setters on `GlobalConfig` that validate with `IsValidPerformanceMode()`/`IsValidXHProfMode()` before writing. Invalid values are silently ignored.
 
 Project-level config (in `.ddev/config.yaml`, handled by `pkg/ddevapp/`) can override global
 fields like `PerformanceMode`, `OmitContainers`, router ports, and `WebEnvironment`.
@@ -308,40 +409,58 @@ Priority: global config `UpdateInterval` > remote-served `UpdateInterval` > hard
 
 ### Storage Layer
 
-- `FileStorage` (`pkg/config/remoteconfig/storage/file_storage.go`): reads/writes `RemoteConfigData` as JSON
-- `AddonStorage` (`pkg/config/remoteconfig/storage/addon_storage.go`): caches addon registry data
-- `SponsorshipStorage` (`pkg/config/remoteconfig/storage/sponsorship_storage.go`): caches sponsorship data
+- `FileStorage` (`pkg/config/remoteconfig/storage/file_storage.go`): reads/writes `RemoteConfigData` via gob encoding; implements `RemoteConfigStorage`.
+- `AddonStorage` (`pkg/config/remoteconfig/storage/addon_storage.go`): typed interface `Read() (*AddonData, error)` / `Write(*AddonData) error`; gob-backed. Constructor: `NewAddonFileStorage(fileName)`. Cache is read once per process.
+- `SponsorshipStorage` (`pkg/config/remoteconfig/storage/sponsorship_storage.go`): typed interface `Read() (*SponsorshipData, error)` / `Write(*SponsorshipData) error`; gob-backed. Constructor: `NewSponsorshipFileStorage(fileName)`. Cache is read once per process.
 
-All storage types implement `RemoteConfigStorage` interface: `Read() (T, error)`, `Write(T) error`.
+`AddonStorage` and `SponsorshipStorage` have their own typed interfaces (not `RemoteConfigStorage`). All gob-backed files use the same lazy-load/once-per-run pattern.
 
 ## State Management
 
 ### Interface (`pkg/config/state/types/`)
 
 ```go
+type StateEntryKey = string
+type StateEntry = any
+type RawState = map[string]any
+
 type State interface {
-    Get(key string) string
-    Set(key string, value string) error
+    Load() error
+    Save() error
+    Loaded() bool
+    Changed() bool
+    Get(key StateEntryKey, stateEntry StateEntry) error  // stateEntry must be a pointer
+    Set(key StateEntryKey, stateEntry StateEntry) error
 }
 
 type StateStorage interface {
-    Read() (map[string]string, error)
-    Write(data map[string]string) error
+    Read() (RawState, error)
+    Write(RawState) error
 }
 ```
 
 ### Implementation
 
-- `stateManager` (`pkg/config/state/state_manager.go`): in-memory `map[string]string` with lazy load
-  from `StateStorage`. `Get()` calls `load()` on first access; `Set()` writes through immediately.
-- `YamlStorage` (`pkg/config/state/storage/yaml/yaml_storage.go`): persists state to a YAML file
-  at `GetGlobalDdevDir()/.state.yaml`.
-- `NewDdevState()` wires `YamlStorage` into `stateManager`.
+- `stateManager` (`pkg/config/state/state_manager.go`): in-memory `RawState` with lazy load.
+  `Get()` calls `Load()` on first access; `Set()` marks changed but does not write-through (call `Save()` explicitly).
+- `YamlStorage` (`pkg/config/state/storage/yaml/yaml_storage.go`): persists state to YAML at `GetGlobalDdevDir()/.state.yaml`.
+- `New(storage)` wires any `StateStorage` into `stateManager`.
 
 ### Remote Config State Wrapper (`pkg/config/remoteconfig/state.go`)
 
-The `state` struct wraps `statetypes.State` and exposes a typed `UpdatedAt time.Time` field.
-It reads/writes the `"remoteconfig.updated_at"` key in the state store, parsing RFC3339 timestamps.
+The `state` struct wraps `statetypes.State` and persists a `stateEntry` struct under the `"remote_config"` key:
+
+```go
+type stateEntry struct {
+    UpdatedAt          time.Time `yaml:"updated_at"`
+    LastNotificationAt time.Time `yaml:"last_notification_at"`
+    LastTickerAt       time.Time `yaml:"last_ticker_at"`
+    LastTickerMessage  int       `yaml:"last_ticker_message"`
+    LastSponsorshipAt  time.Time `yaml:"last_sponsorship_at"`
+}
+```
+
+Serialized/deserialized via `stateManager.Get(stateKey, &stateEntry)` / `stateManager.Set(stateKey, stateEntry)`.
 
 ## Edge Cases
 
@@ -377,4 +496,6 @@ If `isInternetActive()` returns false, `updateFromRemote()` is a no-op and the l
 
 `WriteGlobalConfig()` strips default values before writing: `RequiredDockerComposeVersion` if
 matching the compiled default, remote config URLs if matching defaults, and `Router` (always
-cleared since only Traefik is valid). This keeps `global_config.yaml` minimal.
+cleared since only Traefik is valid). Additionally, if `PerformanceMode` is empty the effective
+OS default is written out; if `XHProfMode` is empty `FlagXHProfModeDefault` (`"xhgui"`) is written.
+This ensures the file always reflects the effective values rather than empty strings.

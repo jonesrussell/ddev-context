@@ -13,10 +13,10 @@ for all container, volume, network, and image operations in DDEV.
 | `pkg/dockerutil/volumes.go` | Volume CRUD, `CopyIntoVolume()`, `ParseDockerSystemDf()`, `VolumeSize` type |
 | `pkg/dockerutil/networks.go` | Network ensure/remove/duplicate-cleanup; `NetName` const (`ddev_default`) |
 | `pkg/dockerutil/images.go` | `ImageExistsLocally()`, `FindImagesByLabels()`, `RemoveImage()` |
-| `pkg/dockerutil/providers.go` | `IsDockerDesktop()`, `IsColima()`, `IsOrbStack()`, `IsPodman()` detection |
+| `pkg/dockerutil/providers.go` | `IsDockerDesktop()`, `IsColima()`, `IsLima()`, `IsRancherDesktop()`, `IsOrbStack()`, `IsPodman()`, `IsRootless()`, `IsPodmanRootless()`, `IsDockerRootless()`, `IsSELinux()` detection |
 | `pkg/dockerutil/host_docker_internal.go` | `HostDockerInternal` type; platform-specific `host.docker.internal` IP resolution |
 | `pkg/dockerutil/requirements.go` | `DockerVersionMatrix` type; version/buildx/compose/auth checks |
-| `pkg/docker/images.go` | Image tag helpers (`GetWebImage()`, `GetDBImage()`, `GetRouterImage()`) -- separate package |
+| `pkg/docker/images.go` | Image tag helpers (`GetWebImage()`, `GetDBImage()`, `GetRouterImage()`, `GetSSHAuthImage()`, `GetXhguiImage()`) -- separate package |
 
 ## Key Types
 
@@ -58,10 +58,10 @@ type ComposeCmdOpts struct {
 
 ### Other Exported Types
 
-- **`HostDockerInternal`** (`host_docker_internal.go:17`): `IPAddress string`, `ExtraHost string`, `Message string`
-- **`DockerVersionMatrix`** (`requirements.go:21`): `APIVersion`, `Version`, `BuildxVersion`, `PodmanVersion`, `ComposeVersionConstraint` (all `string`)
-- **`VolumeSize`** (`volumes.go:149`): `Name string`, `SizeBytes int64`, `SizeHuman string`
-- **`NoHealthCheck`** (`containers.go:38`): `var NoHealthCheck = container.HealthConfig{...}` -- passed to disable health checks
+- **`HostDockerInternal`** (`host_docker_internal.go`): `IPAddress string`, `ExtraHost string`, `Message string`
+- **`DockerVersionMatrix`** (`requirements.go`): `APIVersion`, `Version`, `BuildxVersion`, `PodmanVersion`, `ComposeVersionConstraint` (all `string`)
+- **`VolumeSize`** (`volumes.go`): `Name string`, `SizeBytes int64`, `SizeHuman string`
+- **`NoHealthCheck`** (`containers.go`): `var NoHealthCheck = container.HealthConfig{...}` -- passed to disable health checks
 
 ## Interface Signatures
 
@@ -112,8 +112,8 @@ type ComposeCmdOpts struct {
 - `Exec(containerID string, command string, uid string) (string, string, error)`
 - `CopyIntoContainer(srcPath string, containerName string, dstPath string, exclusion string) error`
 - `CopyFromContainer(containerName string, containerPath string, hostPath string) error`
-- `RunSimpleContainer(image, name string, cmd, entrypoint, env, binds []string, uid string, removeContainerAfterRun, detach bool, labels map[string]string, portBindings network.PortMap, healthConfig *container.HealthConfig) (string, string, error)`
-- `RunSimpleContainerExtended(name string, config *container.Config, hostConfig *container.HostConfig, removeContainerAfterRun, detach bool) (string, string, error)`
+- `RunSimpleContainer(image, name string, cmd, entrypoint, env, binds []string, uid string, removeContainerAfterRun, detach bool, labels map[string]string, portBindings network.PortMap, healthConfig *container.HealthConfig) (containerID string, out string, returnErr error)`
+- `RunSimpleContainerExtended(name string, config *container.Config, hostConfig *container.HostConfig, removeContainerAfterRun bool, timeout time.Duration) (containerID string, out string, returnErr error)` -- **signature changed**: `detach bool` replaced by `timeout time.Duration`; `timeout=0` means detach
 - `RemoveContainer(id string) error`
 - `RemoveContainersByLabels(labels map[string]string) error`
 - `GetBoundHostPorts(containerID string) ([]string, error)`
@@ -128,6 +128,9 @@ type ComposeCmdOpts struct {
 - `CopyIntoVolume(sourcePath, volumeName, targetSubdir, uid string, excludeDirs string, destroyExisting bool) error`
 - `ParseDockerSystemDf() (map[string]VolumeSize, error)`
 - `GetVolumeSize(volumeName string) (int64, string, error)`
+- `ListFilesInVolume(volumeName string, subdir string) ([]string, error)` -- lists filenames in a volume subdirectory
+- `RemoveFilesFromVolume(volumeName string, subdir string, files []string) error` -- removes specific files from a volume subdirectory
+- `PurgeDirectoryContentsInVolume(volumeName string, subdirs []string, uid string) error` -- removes all files inside subdirs but keeps the directories (preserves inotify watches)
 
 ### Network Operations (`networks.go`)
 
@@ -187,10 +190,18 @@ type ComposeCmdOpts struct {
 
 ### Provider Detection (`providers.go`)
 
-- `IsDockerDesktop()` (`providers.go:10`): checks Docker context name for `desktop-linux` prefix
-- `IsColima()` (`providers.go:25`): checks context name prefix `colima`
-- `IsOrbStack()` (`providers.go:68`): checks `info.OperatingSystem` starts with `OrbStack`
-- `IsPodman()`: detected via server version info
+All detection functions use `GetDockerClientInfo()` (system.Info) unless noted.
+
+- `IsDockerDesktop()`: checks `info.OperatingSystem` prefix `Docker Desktop` or `info.Name` contains `docker-desktop`
+- `IsColima()`: checks `info.Name` prefix `colima`
+- `IsLima()`: checks `info.Name` prefix `lima`, excluding names containing `rancher-desktop`
+- `IsRancherDesktop()`: checks `info.OperatingSystem` prefix `Rancher Desktop` or `info.Name` contains `rancher-desktop`
+- `IsOrbStack()`: checks `info.OperatingSystem` prefix `OrbStack` or `info.Name` contains `orbstack`
+- `IsPodman()`: detected via `GetServerVersion()` components -- looks for component named `Podman Engine`
+- `IsRootless()`: checks `info.SecurityOptions` for `name=rootless`
+- `IsPodmanRootless()`: `IsRootless() && IsPodman()`
+- `IsDockerRootless()`: `IsRootless() && nodeps.IsLinux() && !IsPodman() && !IsLima()`
+- `IsSELinux()`: checks `info.SecurityOptions` for `name=selinux`
 
 ### host.docker.internal Resolution (`host_docker_internal.go`)
 
@@ -200,11 +211,14 @@ type ComposeCmdOpts struct {
 |---|---|---|
 | Docker Desktop (any OS) | *(built-in)* | *(auto)* |
 | Colima | `host-gateway` | `192.168.5.2` |
+| Rancher Desktop / Lima | `host-gateway` | Docker bridge gateway IP |
 | Native Linux (no WSL2) | `host-gateway` | Docker bridge gateway IP |
 | WSL2 + Docker Desktop | *(built-in)* | *(auto)* |
 | WSL2 + non-Desktop engine | `host-gateway` | Windows host IP from routing table |
 | WSL2 mirrored mode | `host-gateway` | Windows reachable IP via PowerShell |
 | xdebug_ide_location override | `host-gateway` | User-specified IP |
+
+`ResetHostDockerInternal()` clears the cached singleton -- call after mutating global config (e.g., in tests).
 
 ### Error Handling Patterns
 

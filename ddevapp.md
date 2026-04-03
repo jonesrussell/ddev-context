@@ -1,6 +1,7 @@
 # pkg/ddevapp — Subsystem Spec
 
 > Generated for AI consumption. Source: `pkg/ddevapp/` in ddev/ddev.
+> Last updated: 2026-04-03 (covers commits through ~2026-04-03, ~41 commits since 2026-03-11).
 
 ## 1. File Map
 
@@ -25,6 +26,11 @@
 | `pkg/ddevapp/ports.go` | Port reservation and collision detection |
 | `pkg/ddevapp/traefik.go` | Traefik cert generation and per-project config |
 | `pkg/ddevapp/hooks.go` | Hook (pre-start, post-start, etc.) processing |
+| `pkg/ddevapp/shopware6.go` | Shopware 6 settings, detection, upload dirs, post-start |
+| `pkg/ddevapp/silverstripe.go` | SilverStripe detection, post-start, upload dirs, config override |
+| `pkg/ddevapp/upload_dirs.go` | Upload directory helpers |
+| `pkg/ddevapp/os_warnings.go` | OS-specific warnings (+ platform file `os_warnings_darwin.go`) |
+| `pkg/ddevapp/performance_mode.go` | Performance mode helpers |
 
 ## 2. Key Types
 
@@ -48,10 +54,14 @@ type DdevApp struct {
     WebserverType     string `yaml:"webserver_type"`
     WebImage          string `yaml:"webimage,omitempty"`
     Database          DatabaseDesc `yaml:"database"`
+    // Legacy: MariaDBVersion/MySQLVersion auto-migrated to Database on load
+    MariaDBVersion    string `yaml:"mariadb_version,omitempty"`
+    MySQLVersion      string `yaml:"mysql_version,omitempty"`
     NodeJSVersion     string `yaml:"nodejs_version,omitempty"`
     ComposerVersion   string `yaml:"composer_version"`
     ComposerRoot      string `yaml:"composer_root,omitempty"`
     CorepackEnable    bool   `yaml:"corepack_enable"`
+    XdebugEnabled     bool   `yaml:"xdebug_enabled"`
 
     // Networking
     RouterHTTPPort    string   `yaml:"router_http_port,omitempty"`
@@ -61,6 +71,10 @@ type DdevApp struct {
     HostDBPort         string `yaml:"host_db_port,omitempty"`
     HostWebserverPort  string `yaml:"host_webserver_port,omitempty"`
     HostHTTPSPort      string `yaml:"host_https_port,omitempty"`
+    // Mailpit ports (formerly Mailhog)
+    MailpitHTTPPort    string `yaml:"mailpit_http_port,omitempty"`
+    MailpitHTTPSPort   string `yaml:"mailpit_https_port,omitempty"`
+    HostMailpitPort    string `yaml:"host_mailpit_port,omitempty"`
     BindAllInterfaces  bool   `yaml:"bind_all_interfaces,omitempty"`
     ProjectTLD         string `yaml:"project_tld,omitempty"`
     UseDNSWhenPossible bool   `yaml:"use_dns_when_possible"`
@@ -77,6 +91,7 @@ type DdevApp struct {
     DBImageExtraPackages  []string          `yaml:"dbimage_extra_packages,omitempty,flow"`
     WebEnvironment        []string          `yaml:"web_environment"`
     OmitContainers        []string          `yaml:"omit_containers,omitempty,flow"`
+    UploadDirDeprecated   string            `yaml:"upload_dir,omitempty"` // singular, deprecated
     UploadDirs            []string          `yaml:"upload_dirs,omitempty"`
     WorkingDir            map[string]string `yaml:"working_dir,omitempty"`
 
@@ -149,6 +164,9 @@ func (app *DdevApp) ReadConfig(includeOverrides bool) ([]string, error)
 func (app *DdevApp) LoadConfigYamlFile(filePath string) error
 func (app *DdevApp) WriteConfig() error
 func (app *DdevApp) ValidateConfig() error
+func (app *DdevApp) ConfigPostLoadCleanup()                        // dedup arrays, normalize WebEnvironment
+func (app *DdevApp) GetProcessedProjectConfigYAML(omitKeys ...string) ([]byte, error) // YAML with omissions
+func SortWebExtraExposedPorts(app *DdevApp)                        // called after load; router port entry sorts first
 ```
 
 ### Lifecycle (pkg/ddevapp/ddevapp.go)
@@ -205,12 +223,18 @@ func DiagnoseMutagenConfiguration(app *DdevApp) MutagenDiagnosticResult
 ```go
 func GetInstalledAddons(app *DdevApp) []AddonManifest
 func GetInstalledAddonNames(app *DdevApp) []string
+func GetInstalledAddonProjectFiles(app *DdevApp) []string
 func InstallAddonFromGitHub(app *DdevApp, addonName, requestedVersion string, verbose bool) error
 func InstallAddonFromDirectory(app *DdevApp, extractedDir, repository, version string, verbose bool) error
 func InstallAddonFromTarball(app *DdevApp, tarballURL, downloadedRelease, repository string, verbose bool) error
 func RemoveAddon(app *DdevApp, addonName string, verbose bool, skipRemovalActions bool) error
 func ProcessAddonAction(action string, installDesc InstallDesc, app *DdevApp, verbose bool) error
 func ListAvailableAddonsFromRegistry() ([]types.Addon, error)
+func ParseRuntimeDependencies(runtimeDepsFile string) ([]string, error)
+func NormalizeAddonIdentifier(addonIdentifier string) string
+func AddToInstallStack(addonName string) error
+func InstallDependencies(app *DdevApp, dependencies []string, verbose bool) error
+func ResetInstallStack()
 ```
 
 ## 4. Data Flow
@@ -223,13 +247,19 @@ func ListAvailableAddonsFromRegistry() ([]types.Addon, error)
 2. Sets defaults: `PHPVersion=nodeps.PHPDefault`, `WebserverType=nodeps.WebserverDefault`,
    `Database=DatabaseDefault`
 3. If `.ddev/config.yaml` exists, calls `app.ReadConfig(includeOverrides)`
-4. `ReadConfig` calls `app.LoadConfigYamlFile(app.ConfigPath)` for base config
-5. If `includeOverrides=true`, globs `config.*.y*ml` files and loads each in order
-6. `LoadConfigYamlFile` reads file, calls `validateHookYAML(source)`, then
-   `yaml.Unmarshal(source, app)`
-7. `WriteConfig()` copies the app struct, strips default values, calls
+4. `ReadConfig` validates hook YAML for all files first (pre-load validation), then delegates
+   to `settings.LoadProjectConfigFromContents(baseContent, overrides, app)` from `pkg/settings`
+   (viper-based config model, replaces the old sequential `yaml.Unmarshal` approach, fixes #5763)
+5. If `includeOverrides=true`, globs `config.*.y*ml` files; each is passed as a
+   `settings.OverrideConfig{Path, Content}` slice to the loader
+6. `LoadConfigYamlFile` (single-file path) calls `settings.LoadProjectConfig(filePath, [], app)`
+7. After either load path, calls `SortWebExtraExposedPorts(app)` then `app.ConfigPostLoadCleanup()`
+8. `ConfigPostLoadCleanup()` deduplicates array fields (`WebImageExtraPackages`, `DBImageExtraPackages`,
+   `AdditionalHostnames`, `AdditionalFQDNs`, `OmitContainers`) and normalizes `WebEnvironment` via
+   `util.EnvToUniqueEnv`
+9. `WriteConfig()` copies the app struct, strips default values, calls
    `yaml.Marshal(appcopy)`, appends hook comments, writes to `config.yaml`
-8. `WriteConfig` also calls `app.UpdateGlobalProjectList()` to reserve ports
+10. `WriteConfig` also calls `app.UpdateGlobalProjectList()` to reserve ports
 
 #### Phase 2: Init (`ddev start` pre-container)
 
@@ -309,10 +339,15 @@ func ListAvailableAddonsFromRegistry() ([]types.Addon, error)
 | `router_https_port` | `RouterHTTPSPort` | `string` | `"443"` |
 | `additional_hostnames` | `AdditionalHostnames` | `[]string` | `[]` |
 | `additional_fqdns` | `AdditionalFQDNs` | `[]string` | `[]` |
+| `xdebug_enabled` | `XdebugEnabled` | `bool` | `false` |
+| `mailpit_http_port` | `MailpitHTTPPort` | `string` | `""` |
+| `mailpit_https_port` | `MailpitHTTPSPort` | `string` | `""` |
+| `host_mailpit_port` | `HostMailpitPort` | `string` | `""` |
 | `hooks` | `Hooks` | `map[string][]YAMLTask` | `nil` |
 | `web_extra_exposed_ports` | `WebExtraExposedPorts` | `[]WebExposedPort` | `nil` |
 | `web_extra_daemons` | `WebExtraDaemons` | `[]WebExtraDaemon` | `nil` |
 | `omit_containers` | `OmitContainers` | `[]string` | `[]` |
+| `upload_dir` | `UploadDirDeprecated` | `string` | deprecated singular form |
 | `upload_dirs` | `UploadDirs` | `[]string` | CMS-specific |
 | `web_environment` | `WebEnvironment` | `[]string` | `[]` |
 | `ddev_version_constraint` | `DdevVersionConstraint` | `string` | `""` |
@@ -351,6 +386,10 @@ Static map populated in `init()`. Registered types include:
 `drupal7`, `drupal8`, `drupal9`, `drupal10`, `drupal11`, `drupal12`, `laravel`,
 `magento`, `magento2`, `php`, `python`, `shopware6`, `silverstripe`, `symfony`,
 `typo3`, `wordpress`, `generic`.
+
+`shopware6` and `silverstripe` have their own source files as of the current codebase
+(`shopware6.go`, `silverstripe.go`) implementing detection, upload dirs, post-start, and
+(for SilverStripe) a config override action.
 
 The `"drupal"` entry is a copy of the latest stable Drupal type with
 `appTypeDetect` set to `nil` (not auto-detected, only explicit).
@@ -454,6 +493,12 @@ type AddonManifest struct {
 - Registry has fallback logic in `getAddonRegistryWithFallback()`
 - `GetInstalledAddons(app)` reads manifests from `.ddev/addon-manifests/`
 
+### PHP Action Timeout
+
+- `processPHPAction` runs PHP addon actions inside a container via
+  `dockerutil.RunSimpleContainerExtended`. The timeout was changed from a boolean
+  `true` to `30*time.Minute` to give long-running PHP actions adequate time.
+
 ## 8. Edge Cases
 
 ### Mutagen Sync (pkg/ddevapp/mutagen.go)
@@ -513,3 +558,21 @@ type AddonManifest struct {
 
 - `WriteConfig()` detects if name was changed by a `config.*.yaml` override via
   `app.HasConfigNameOverride()` and omits name from the base config file
+
+### web_environment Bare Variable Passthrough
+
+- Entries in `web_environment` can be bare variable names (no `=` sign), e.g., `MY_VAR`.
+  DDEV passes the host environment value for that variable into the container at runtime.
+  This was added in #8209. Both `KEY=VALUE` and bare `KEY` forms are supported.
+
+### WordPress WP_HOME Runtime URL
+
+- WordPress post-start action now sets `WP_HOME` using the runtime `DDEV_PRIMARY_URL`
+  environment variable rather than a static value written at start time. This ensures
+  `WP_HOME` reflects the actual primary URL even when ports change. (#8176)
+
+### Custom Config File Detection
+
+- `ddev utility check-custom-config` (added in #8218) detects custom user-modified
+  config files in `.ddev/` that are not managed by DDEV. The detection logic lives in
+  `pkg/ddevapp/config.go`.
