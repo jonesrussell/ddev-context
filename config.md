@@ -2,6 +2,14 @@
 
 Subsystem spec covering `pkg/globalconfig/` and `pkg/config/` (types, remoteconfig, state).
 
+## Layer Rules
+
+**Layer 1 (Config).** Foundation configuration layer.
+
+- **Imports from:** Layer 0 only (util, fileutil, nodeps)
+- **Imported by:** Layer 2 (dockerutil), Layer 3 (ddevapp), Layer 4 (cmd/ddev)
+- **Never imports:** dockerutil, ddevapp, or any higher layer
+
 ## File Map
 
 | File | Purpose |

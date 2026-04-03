@@ -3,6 +3,14 @@
 Package `pkg/dockerutil` wraps the Docker Engine API and Docker Compose CLI
 for all container, volume, network, and image operations in DDEV.
 
+## Layer Rules
+
+**Layer 2 (Docker).** Docker infrastructure layer.
+
+- **Imports from:** Layer 0 (util, fileutil, nodeps), Layer 1 (globalconfig, versionconstants)
+- **Imported by:** Layer 3 (ddevapp) only. **Never import dockerutil from cmd/ddev/cmd/ (Layer 4).** CLI commands should use DdevApp methods which internally delegate to dockerutil.
+- **Never imports:** ddevapp or any higher layer
+
 ## File Map
 
 | File | Purpose |

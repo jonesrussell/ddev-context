@@ -3,6 +3,30 @@
 > Generated for AI consumption. Source: `pkg/ddevapp/` in ddev/ddev.
 > Last updated: 2026-04-03 (covers commits through ~2026-04-03, ~41 commits since 2026-03-11).
 
+## Layer Rules
+
+**Layer 3 (App).** This package is the core application layer.
+
+- **Imports from:** Layer 0 (util, fileutil, netutil, nodeps), Layer 1 (globalconfig, config, versionconstants), Layer 2 (dockerutil, docker)
+- **Imported by:** Layer 4 only (cmd/ddev). Never imported by dockerutil, globalconfig, or other lower layers.
+- **CLI commands (cmd/ddev/cmd/) must not import dockerutil or docker directly.** All container, volume, and port operations should go through DdevApp methods. This is the most common layer violation.
+
+## Decision Guide
+
+When writing CLI commands or features that need project information, use these DdevApp methods instead of reaching into lower layers:
+
+| Need | Use | Do NOT use |
+|---|---|---|
+| Project summary (status, config, containers, ports) | `app.Describe(short)` | Direct Docker API calls or dockerutil functions |
+| Run a command in a container | `app.Exec(opts)` | `dockerutil.ContainerExec()` directly |
+| Check if project is running | `app.SiteStatus()` or check `app.Describe()` output | `dockerutil.FindContainerByLabels()` |
+| Get a specific container | `app.FindContainerByType(type)` | `dockerutil.FindContainerByName()` |
+| Get published ports | `app.GetPublishedPort(service)` | `dockerutil.GetContainerPort()` |
+| Get project URL | `app.GetPrimaryURL()` | String building from config fields |
+| Container health/readiness | `app.Wait(containers)` or `app.WaitForServices()` | Polling Docker directly |
+
+**Key principle:** DdevApp is the facade. CLI code should never bypass it to talk to Docker.
+
 ## 1. File Map
 
 | File | Purpose |
